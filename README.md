@@ -12,24 +12,10 @@ A comprehensive REST API for BIND9 DNS Server management with full support for z
 > **Manage your BIND9 DNS infrastructure as code!**
 >
 > This API is designed to work with the **[Terraform Provider for BIND9](https://github.com/harutyundermenjyan/terraform-provider-bind9)**.
->
-> **Features:**
-> - Single server or multi-primary architecture
-> - Define records once, deploy to all or selected servers
-> - Full zone and record lifecycle management
->
-> 📦 **Get the Provider:** [github.com/harutyundermenjyan/terraform-provider-bind9](https://github.com/harutyundermenjyan/terraform-provider-bind9)
 
----
-
-## Terraform/OpenTofu Usage Examples
-
-### Option 1: Single Server Setup
-
-For a simple single-server deployment:
+### Quick Example
 
 ```terraform
-# providers.tf
 terraform {
   required_providers {
     bind9 = {
@@ -43,35 +29,20 @@ provider "bind9" {
   endpoint = "http://localhost:8080"
   api_key  = var.bind9_api_key
 }
-```
 
-```terraform
-# zones.tf
 resource "bind9_zone" "example" {
   name        = "example.com"
   type        = "master"
   soa_mname   = "ns1.example.com"
   soa_rname   = "hostmaster.example.com"
-  soa_refresh = 3600
-  soa_retry   = 600
-  soa_expire  = 604800
-  soa_minimum = 86400
   default_ttl = 3600
-
   nameservers = ["ns1.example.com", "ns2.example.com"]
-
   ns_addresses = {
     "ns1.example.com" = "10.0.0.1"
     "ns2.example.com" = "10.0.0.2"
   }
-
-  allow_update           = ["key ddns-key"]
-  delete_file_on_destroy = true
 }
-```
 
-```terraform
-# records.tf
 resource "bind9_record" "www" {
   zone    = bind9_zone.example.name
   name    = "www"
@@ -79,338 +50,19 @@ resource "bind9_record" "www" {
   ttl     = 300
   records = ["10.0.0.100"]
 }
-
-resource "bind9_record" "mail" {
-  zone    = bind9_zone.example.name
-  name    = "mail"
-  type    = "A"
-  ttl     = 300
-  records = ["10.0.0.50"]
-}
-
-resource "bind9_record" "mx" {
-  zone    = bind9_zone.example.name
-  name    = "@"
-  type    = "MX"
-  ttl     = 3600
-  records = ["10 mail.example.com."]
-}
-
-resource "bind9_record" "spf" {
-  zone    = bind9_zone.example.name
-  name    = "@"
-  type    = "TXT"
-  ttl     = 3600
-  records = ["v=spf1 mx ~all"]
-}
 ```
 
----
+### 📚 Complete Terraform Documentation
 
-### Option 2: Multi-Primary Server Setup
+For comprehensive Terraform/OpenTofu configuration guides, see the **[Terraform Provider Repository](https://github.com/harutyundermenjyan/terraform-provider-bind9)**:
 
-For managing multiple independent BIND9 servers - **define records once, deploy to all or selected servers**:
-
-```
-┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
-│   Terraform/    │──────▶│   BIND9 API     │──────▶│     BIND9       │
-│   OpenTofu      │       │   (dns1:8080)   │       │   Server 1      │
-│                 │       └─────────────────┘       └─────────────────┘
-│                 │
-│                 │       ┌─────────────────┐       ┌─────────────────┐
-│                 │──────▶│   BIND9 API     │──────▶│     BIND9       │
-│                 │       │   (dns2:8080)   │       │   Server 2      │
-└─────────────────┘       └─────────────────┘       └─────────────────┘
-```
-
-#### File Structure
-
-```
-bind9-orchestrator/
-├── providers.tf          # Provider aliases for each server
-├── variables.tf          # Server definitions
-├── locals.tf             # Helper locals
-├── zones.tf              # Zone resources per server
-├── records.tf            # Records with server targeting
-├── outputs.tf            # Outputs
-└── terraform.tfvars      # Your server configuration (gitignored)
-```
-
-#### providers.tf
-
-```terraform
-terraform {
-  required_version = ">= 1.0"
-
-  required_providers {
-    bind9 = {
-      source  = "harutyundermenjyan/bind9"
-      version = "~> 1.0"
-    }
-  }
-}
-
-# Provider for each DNS server
-provider "bind9" {
-  alias    = "dns1"
-  endpoint = var.servers["dns1"].endpoint
-  api_key  = var.servers["dns1"].api_key
-}
-
-provider "bind9" {
-  alias    = "dns2"
-  endpoint = var.servers["dns2"].endpoint
-  api_key  = var.servers["dns2"].api_key
-}
-
-# Default provider (required by OpenTofu)
-provider "bind9" {
-  endpoint = var.servers["dns1"].endpoint
-  api_key  = var.servers["dns1"].api_key
-}
-```
-
-#### variables.tf
-
-```terraform
-variable "servers" {
-  description = "Map of BIND9 servers to manage"
-  type = map(object({
-    endpoint = string
-    api_key  = string
-    enabled  = bool
-  }))
-}
-```
-
-#### locals.tf
-
-```terraform
-locals {
-  # Filter to only enabled servers
-  enabled_servers = {
-    for name, server in var.servers : name => server
-    if server.enabled
-  }
-}
-```
-
-#### terraform.tfvars
-
-```terraform
-servers = {
-  "dns1" = {
-    endpoint = "http://localhost:8080"   # SSH tunnel or direct
-    api_key  = "your-api-key-for-dns1"
-    enabled  = true
-  }
-  "dns2" = {
-    endpoint = "http://localhost:8081"
-    api_key  = "your-api-key-for-dns2"
-    enabled  = true
-  }
-}
-```
-
-#### zones.tf
-
-```terraform
-# Zone on dns1
-resource "bind9_zone" "example_dns1" {
-  count    = try(var.servers["dns1"].enabled, false) ? 1 : 0
-  provider = bind9.dns1
-
-  name        = "example.com"
-  type        = "master"
-  soa_mname   = "ns1.example.com"
-  soa_rname   = "hostmaster.example.com"
-  soa_refresh = 3600
-  soa_retry   = 600
-  soa_expire  = 604800
-  soa_minimum = 86400
-  default_ttl = 3600
-
-  nameservers = ["ns1.example.com", "ns2.example.com"]
-
-  ns_addresses = {
-    "ns1.example.com" = "10.0.0.1"
-    "ns2.example.com" = "10.0.0.2"
-  }
-
-  allow_update           = ["key ddns-key"]
-  delete_file_on_destroy = true
-}
-
-# Zone on dns2
-resource "bind9_zone" "example_dns2" {
-  count    = try(var.servers["dns2"].enabled, false) ? 1 : 0
-  provider = bind9.dns2
-
-  name        = "example.com"
-  type        = "master"
-  soa_mname   = "ns1.example.com"
-  soa_rname   = "hostmaster.example.com"
-  soa_refresh = 3600
-  soa_retry   = 600
-  soa_expire  = 604800
-  soa_minimum = 86400
-  default_ttl = 3600
-
-  nameservers = ["ns1.example.com", "ns2.example.com"]
-
-  ns_addresses = {
-    "ns1.example.com" = "10.0.0.1"
-    "ns2.example.com" = "10.0.0.2"
-  }
-
-  allow_update           = ["key ddns-key"]
-  delete_file_on_destroy = true
-}
-```
-
-#### records.tf - Define Once, Deploy to Many
-
-```terraform
-locals {
-  # ==========================================================================
-  # Define records ONCE - deploy to ALL or SELECTED servers
-  # ==========================================================================
-  # servers = []           → deploy to ALL enabled servers
-  # servers = ["dns1"]     → deploy to dns1 only
-  # servers = ["dns1", "dns2"] → deploy to dns1 and dns2
-  # ==========================================================================
-
-  example_com_records = {
-    # A Records
-    "www_A" = {
-      name    = "www"
-      type    = "A"
-      ttl     = 300
-      records = ["10.0.0.100"]
-      servers = []              # ALL servers
-    }
-    "app_A" = {
-      name    = "app"
-      type    = "A"
-      ttl     = 300
-      records = ["10.0.0.101"]
-      servers = []              # ALL servers
-    }
-    "db_A" = {
-      name    = "db"
-      type    = "A"
-      ttl     = 300
-      records = ["10.0.0.102"]
-      servers = ["dns1"]        # dns1 only
-    }
-
-    # CNAME Records
-    "api_CNAME" = {
-      name    = "api"
-      type    = "CNAME"
-      ttl     = 300
-      records = ["app.example.com."]
-      servers = []
-    }
-
-    # MX Records
-    "mx_MX" = {
-      name    = "@"
-      type    = "MX"
-      ttl     = 3600
-      records = ["10 mail.example.com."]
-      servers = []
-    }
-
-    # TXT Records
-    "spf_TXT" = {
-      name    = "@"
-      type    = "TXT"
-      ttl     = 3600
-      records = ["v=spf1 mx ~all"]
-      servers = []
-    }
-
-    # PTR Records (for reverse zone)
-    "100_PTR" = {
-      name    = "100"
-      type    = "PTR"
-      ttl     = 3600
-      records = ["www.example.com."]
-      servers = []
-    }
-  }
-
-  # Expand records to target servers
-  example_com_records_expanded = merge([
-    for record_key, record in local.example_com_records : {
-      for server_name, server in local.enabled_servers :
-      "${record_key}_${server_name}" => merge(record, { server = server_name })
-      if length(record.servers) == 0 || contains(record.servers, server_name)
-    }
-  ]...)
-}
-
-# Records for dns1
-resource "bind9_record" "example_dns1" {
-  for_each = {
-    for k, v in local.example_com_records_expanded : k => v
-    if v.server == "dns1" && v.type != "PTR"
-  }
-  provider = bind9.dns1
-
-  zone    = bind9_zone.example_dns1[0].name
-  name    = each.value.name
-  type    = each.value.type
-  ttl     = each.value.ttl
-  records = each.value.records
-}
-
-# Records for dns2
-resource "bind9_record" "example_dns2" {
-  for_each = {
-    for k, v in local.example_com_records_expanded : k => v
-    if v.server == "dns2" && v.type != "PTR"
-  }
-  provider = bind9.dns2
-
-  zone    = bind9_zone.example_dns2[0].name
-  name    = each.value.name
-  type    = each.value.type
-  ttl     = each.value.ttl
-  records = each.value.records
-}
-```
-
-#### Bulk Record Generation ($GENERATE equivalent)
-
-```terraform
-locals {
-  # Equivalent to BIND9: $GENERATE 1-50 host-$ A 10.0.1.$
-  generated_hosts = {
-    for i in range(1, 51) :
-    "host-${i}_A" => {
-      name    = "host-${i}"
-      type    = "A"
-      ttl     = 300
-      records = ["10.0.1.${i}"]
-      servers = []
-    }
-  }
-
-  # With step - equivalent to: $GENERATE 0-100/2 even-$ A 10.0.2.$
-  generated_even = {
-    for i in range(0, 101, 2) :  # start, end, step
-    "even-${i}_A" => {
-      name    = "even-${i}"
-      type    = "A"
-      ttl     = 300
-      records = ["10.0.2.${i}"]
-      servers = []
-    }
-  }
-}
-```
+| Guide | Description |
+|-------|-------------|
+| [Single Server Setup](https://github.com/harutyundermenjyan/terraform-provider-bind9#single-server-setup) | Complete single BIND9 server configuration |
+| [Multi-Server Setup](https://github.com/harutyundermenjyan/terraform-provider-bind9#multi-server-setup) | Multi-primary architecture with `servers = []` pattern |
+| [Bulk Record Generation](https://github.com/harutyundermenjyan/terraform-provider-bind9#bulk-record-generation) | `$GENERATE` equivalent using `range()` |
+| [DNSSEC](https://github.com/harutyundermenjyan/terraform-provider-bind9#dnssec) | KSK/ZSK key management |
+| [All Resources & Data Sources](https://github.com/harutyundermenjyan/terraform-provider-bind9#resources) | Complete reference |
 
 ---
 
@@ -468,6 +120,8 @@ locals {
 - ✅ Role-based access control (scopes)
 - ✅ Rate limiting
 - ✅ CORS support
+
+---
 
 ## BIND9 Server Configuration
 
