@@ -1,0 +1,44 @@
+# BIND9 REST API Dependencies
+# FastAPI Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+gunicorn==21.2.0
+
+# Async support
+httpx==0.26.0
+aiofiles==23.2.1
+
+# Validation & Serialization
+pydantic==2.5.3
+pydantic-settings==2.1.0
+email-validator==2.1.0
+
+# DNS Operations
+dnspython==2.4.2
+
+# Authentication
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.6
+
+# Database (for audit logs and API keys)
+sqlalchemy==2.0.25
+aiosqlite==0.19.0
+
+# Monitoring & Metrics
+prometheus-client==0.19.0
+
+# Rate Limiting
+slowapi==0.1.9
+
+# Utilities
+python-dateutil==2.8.2
+pyyaml==6.0.1
+jinja2==3.1.3
+
+# Development
+pytest==7.4.4
+pytest-asyncio==0.23.3
+httpx==0.26.0
+black==23.12.1
+

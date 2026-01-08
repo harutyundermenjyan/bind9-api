@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  # BIND9 REST API
+  bind9-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bind9-api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # API Configuration
+      BIND9_API_DEBUG: "false"
+      BIND9_API_LOG_LEVEL: "INFO"
+      
+      # Authentication
+      BIND9_API_AUTH_ENABLED: "true"
+      BIND9_API_AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-change-me-generate-with-openssl-rand-hex-32}"
+      
+      # BIND9 Configuration (adjust for your setup)
+      BIND9_API_BIND9_CONFIG_PATH: "/etc/bind/named.conf"
+      BIND9_API_BIND9_ZONES_PATH: "/etc/bind/zones"
+      BIND9_API_BIND9_KEYS_PATH: "/etc/bind/keys"
+      BIND9_API_BIND9_RNDC_KEY: "/etc/bind/rndc.key"
+      BIND9_API_BIND9_STATS_URL: "http://bind9:8053"
+      
+      # Database
+      BIND9_API_DATABASE_URL: "sqlite+aiosqlite:///./data/bind9_api.db"
+      
+      # Rate Limiting
+      BIND9_API_RATE_LIMIT_ENABLED: "true"
+      BIND9_API_RATE_LIMIT_REQUESTS: "100"
+      BIND9_API_RATE_LIMIT_PERIOD: "60"
+      
+    volumes:
+      # BIND9 configuration (read-only for most operations)
+      - /etc/bind:/etc/bind:ro
+      # Zone files (read-write for zone management)
+      - /var/lib/bind:/var/lib/bind
+      # BIND9 keys (read-only or read-write for DNSSEC)
+      - /etc/bind/keys:/etc/bind/keys
+      # API database
+      - bind9-api-data:/app/data
+    
+    networks:
+      - bind9-network
+    
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8080/health/live').raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    
+    # Optionally, if running alongside BIND9 container
+    depends_on:
+      - bind9
+  
+  # BIND9 DNS Server (optional - if you want to run BIND9 in Docker)
+  bind9:
+    image: ubuntu/bind9:latest
+    container_name: bind9
+    restart: unless-stopped
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "953:953/tcp"     # RNDC
+      - "8053:8053/tcp"   # Statistics channel
+    environment:
+      TZ: "UTC"
+      BIND9_USER: "bind"
+    volumes:
+      - /etc/bind:/etc/bind
+      - /var/lib/bind:/var/lib/bind
+      - /var/cache/bind:/var/cache/bind
+      - /var/log/bind:/var/log
+    networks:
+      - bind9-network
+    cap_add:
+      - NET_ADMIN
+
+volumes:
+  bind9-api-data:
+    driver: local
+
+networks:
+  bind9-network:
+    driver: bridge
+
