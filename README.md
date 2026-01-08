@@ -15,14 +15,23 @@ A comprehensive REST API for BIND9 DNS Server management with full support for z
 >
 > ```terraform
 > resource "bind9_zone" "example" {
->   name = "example.com"
->   type = "master"
+>   name        = "example.com"
+>   type        = "master"
+>   soa_mname   = "ns1.example.com"
+>   soa_rname   = "hostmaster.example.com"
+>   default_ttl = 3600
+>   nameservers = ["ns1.example.com", "ns2.example.com"]
+>   ns_addresses = {
+>     "ns1.example.com" = "10.0.0.1"
+>     "ns2.example.com" = "10.0.0.2"
+>   }
 > }
 >
 > resource "bind9_record" "www" {
 >   zone    = bind9_zone.example.name
 >   name    = "www"
 >   type    = "A"
+>   ttl     = 300
 >   records = ["10.0.0.100"]
 > }
 > ```
