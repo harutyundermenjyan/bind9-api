@@ -5,6 +5,32 @@
 
 A comprehensive REST API for BIND9 DNS Server management with full support for zones, records, DNSSEC, and server control.
 
+---
+
+## 🚀 Use with Terraform/OpenTofu
+
+> **Manage your BIND9 DNS infrastructure as code!**
+>
+> This API is designed to work with the **[Terraform Provider for BIND9](https://github.com/harutyundermenjyan/terraform-provider-bind9)**.
+>
+> ```terraform
+> resource "bind9_zone" "example" {
+>   name = "example.com"
+>   type = "master"
+> }
+>
+> resource "bind9_record" "www" {
+>   zone    = bind9_zone.example.name
+>   name    = "www"
+>   type    = "A"
+>   records = ["10.0.0.100"]
+> }
+> ```
+>
+> 📦 **Get the Provider:** [github.com/harutyundermenjyan/terraform-provider-bind9](https://github.com/harutyundermenjyan/terraform-provider-bind9)
+
+---
+
 ## Features
 
 ### Zone Management
@@ -275,9 +301,18 @@ curl http://localhost:8080/metrics
 
 ## Related Projects
 
-| Project | Description |
-|---------|-------------|
-| [terraform-provider-bind9](https://github.com/harutyundermenjyan/terraform-provider-bind9) | Terraform/OpenTofu provider for BIND9 |
+| Project | Description | Status |
+|---------|-------------|--------|
+| **[terraform-provider-bind9](https://github.com/harutyundermenjyan/terraform-provider-bind9)** | Terraform/OpenTofu provider that uses this API | ✅ Available |
+
+### Integration Example
+
+```
+┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
+│   Terraform/    │──────▶│   BIND9 REST    │──────▶│     BIND9       │
+│   OpenTofu      │ HTTPS │   API (this)    │ rndc  │     Server      │
+└─────────────────┘       └─────────────────┘       └─────────────────┘
+```
 
 ## Project Structure
 
