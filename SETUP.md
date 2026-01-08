@@ -66,12 +66,24 @@ python3 -c "import secrets; print('SECRET_KEY:', secrets.token_urlsafe(32))"
 
 ## BIND9 Configuration
 
-### 1. Create TSIG Key for Dynamic Updates
+### 1. Create Required Directories
 
 ```bash
-# Create keys directory
+# Create directories
 mkdir -p /etc/bind/keys
+mkdir -p /var/lib/bind
+mkdir -p /var/log/bind
 
+# Set ownership
+chown -R bind:bind /etc/bind/keys
+chown -R bind:bind /var/lib/bind
+chown -R bind:bind /var/log/bind
+chmod 755 /var/lib/bind /var/log/bind
+```
+
+### 2. Create TSIG Key for Dynamic Updates
+
+```bash
 # Generate TSIG key
 tsig-keygen -a hmac-sha256 ddns-key > /etc/bind/keys/ddns-key.key
 
@@ -80,7 +92,7 @@ chown bind:bind /etc/bind/keys/ddns-key.key
 chmod 640 /etc/bind/keys/ddns-key.key
 ```
 
-### 2. Configure named.conf
+### 3. Configure named.conf
 
 Add to `/etc/bind/named.conf.options`:
 
@@ -107,13 +119,18 @@ Add to `/etc/bind/named.conf.local`:
 include "/etc/bind/keys/ddns-key.key";
 ```
 
-### 3. Configure AppArmor (if enabled)
+### 4. Configure AppArmor (Ubuntu - Critical!)
+
+**AppArmor restricts BIND9's file access by default.** This step is essential on Ubuntu.
 
 ```bash
 # Create local AppArmor overrides
 cat > /etc/apparmor.d/local/usr.sbin.named << 'EOF'
 # Allow BIND9 to write to zone directory
 /var/lib/bind/** rw,
+
+# Allow BIND9 to write logs
+/var/log/bind/** rw,
 
 # Allow BIND9 to read keys
 /etc/bind/keys/** r,
@@ -127,9 +144,12 @@ EOF
 
 # Reload AppArmor
 apparmor_parser -r /etc/apparmor.d/usr.sbin.named
+
+# Verify
+aa-status | grep named
 ```
 
-### 4. Restart BIND9
+### 5. Restart BIND9
 
 ```bash
 systemctl restart bind9
