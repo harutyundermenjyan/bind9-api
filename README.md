@@ -535,7 +535,7 @@ bind9-api/
 
 ## License
 
-Apache License 2.0 - Copyright (c) 2024-2026 Harutyun Dermenjyan
+Apache License 2.0 - Copyright (c) 2026 Harutyun Dermenjyan
 
 See [LICENSE](LICENSE) for details.
 
