@@ -81,7 +81,16 @@ chown -R bind:bind /var/log/bind
 chmod 755 /var/lib/bind /var/log/bind
 ```
 
-### 2. Create TSIG Key for Dynamic Updates
+### 2. Generate RNDC Key
+
+```bash
+# Generate RNDC key (for server control)
+rndc-confgen -a -k rndc-key -c /etc/bind/rndc.key
+chown bind:bind /etc/bind/rndc.key
+chmod 640 /etc/bind/rndc.key
+```
+
+### 3. Create TSIG Key for Dynamic Updates
 
 ```bash
 # Generate TSIG key
@@ -90,36 +99,76 @@ tsig-keygen -a hmac-sha256 ddns-key > /etc/bind/keys/ddns-key.key
 # Set permissions
 chown bind:bind /etc/bind/keys/ddns-key.key
 chmod 640 /etc/bind/keys/ddns-key.key
+
+# Display the key (SAVE THIS - needed for API config)
+cat /etc/bind/keys/ddns-key.key
 ```
 
-### 3. Configure named.conf
+### 4. Configure named.conf
 
-Add to `/etc/bind/named.conf.options`:
+Create or edit `/etc/bind/named.conf`:
 
-```
+```bind
+# Include keys
+include "/etc/bind/rndc.key";
+include "/etc/bind/keys/ddns-key.key";
+
 options {
-    directory "/var/lib/bind";
-    
-    // Allow dynamic zone management
+    directory "/var/cache/bind";
+
+    # Allow queries
+    allow-query { any; };
+
+    # DNSSEC validation
+    dnssec-validation auto;
+
+    # Listen on all interfaces
+    listen-on { any; };
+    listen-on-v6 { any; };
+
+    # CRITICAL: Enable dynamic zone management via API
     allow-new-zones yes;
-    
-    // Other options...
 };
 
-// Statistics channel (optional, for monitoring)
+# Statistics channel for monitoring API
 statistics-channels {
     inet 127.0.0.1 port 8053 allow { 127.0.0.1; };
 };
+
+# RNDC control for zone management
+controls {
+    inet 127.0.0.1 port 953 allow { 127.0.0.1; } keys { "rndc-key"; };
+};
+
+# Logging (recommended)
+logging {
+    channel default_log {
+        file "/var/log/bind/default.log" versions 3 size 5m;
+        severity info;
+        print-time yes;
+        print-severity yes;
+        print-category yes;
+    };
+    category default { default_log; };
+    category queries { default_log; };
+};
+
+# Include zone configurations
+include "/etc/bind/named.conf.local";
 ```
 
-Add to `/etc/bind/named.conf.local`:
+### Key Configuration Points
 
-```
-// Include TSIG key
-include "/etc/bind/keys/ddns-key.key";
-```
+| Setting | Purpose | Required |
+|---------|---------|----------|
+| `include "rndc.key"` | RNDC authentication for server control | ✅ Yes |
+| `include "ddns-key.key"` | TSIG key for authenticated DNS updates | ✅ Yes |
+| `allow-new-zones yes` | Allows API to create/delete zones dynamically | ✅ Yes |
+| `controls { ... }` | RNDC control channel (port 953) | ✅ Yes |
+| `statistics-channels` | Enables statistics API endpoint | Optional |
+| `logging { ... }` | Log configuration for troubleshooting | Recommended |
 
-### 4. Configure AppArmor (Ubuntu - Critical!)
+### 5. Configure AppArmor (Ubuntu - Critical!)
 
 **AppArmor restricts BIND9's file access by default.** This step is essential on Ubuntu.
 
@@ -149,7 +198,7 @@ apparmor_parser -r /etc/apparmor.d/usr.sbin.named
 aa-status | grep named
 ```
 
-### 5. Restart BIND9
+### 6. Restart BIND9
 
 ```bash
 systemctl restart bind9
