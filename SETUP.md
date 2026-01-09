@@ -104,43 +104,112 @@ chmod 640 /etc/bind/keys/ddns-key.key
 cat /etc/bind/keys/ddns-key.key
 ```
 
-### 4. Configure named.conf
+### 4. Configure BIND9
 
-Create or edit `/etc/bind/named.conf`:
+On Debian/Ubuntu, BIND9 uses split config files by default. You have two options:
 
-```bind
-# Include keys
+#### Option A: Modify Default Files (Recommended for Debian/Ubuntu)
+
+**Step 1: Edit `/etc/bind/named.conf` to include keys:**
+
+```bash
+cat > /etc/bind/named.conf << 'EOF'
+// Include keys at the top
+include "/etc/bind/rndc.key";
+include "/etc/bind/keys/ddns-key.key";
+
+// Default includes
+include "/etc/bind/named.conf.options";
+include "/etc/bind/named.conf.local";
+include "/etc/bind/named.conf.default-zones";
+EOF
+```
+
+**Step 2: Edit `/etc/bind/named.conf.options`:**
+
+```bash
+cat > /etc/bind/named.conf.options << 'EOF'
+options {
+    directory "/var/cache/bind";
+
+    // Allow queries from anywhere (adjust for production)
+    allow-query { any; };
+
+    // DNSSEC validation
+    dnssec-validation auto;
+
+    // Listen on all interfaces
+    listen-on { any; };
+    listen-on-v6 { any; };
+
+    // CRITICAL: Enable dynamic zone management via API
+    allow-new-zones yes;
+};
+
+// Statistics channel for API - MUST be outside options block
+statistics-channels {
+    inet 127.0.0.1 port 8053 allow { 127.0.0.1; };
+};
+
+// RNDC control
+controls {
+    inet 127.0.0.1 port 953 allow { 127.0.0.1; } keys { "rndc-key"; };
+};
+
+// Logging
+logging {
+    channel default_log {
+        file "/var/log/bind/default.log" versions 3 size 5m;
+        severity info;
+        print-time yes;
+        print-severity yes;
+        print-category yes;
+    };
+    category default { default_log; };
+    category queries { default_log; };
+};
+EOF
+```
+
+#### Option B: Single File Configuration
+
+Replace `/etc/bind/named.conf` with a single consolidated file:
+
+```bash
+cat > /etc/bind/named.conf << 'EOF'
+// BIND9 Configuration for bind9-api
+
 include "/etc/bind/rndc.key";
 include "/etc/bind/keys/ddns-key.key";
 
 options {
     directory "/var/cache/bind";
 
-    # Allow queries
+    // Allow queries from anywhere (adjust for production)
     allow-query { any; };
 
-    # DNSSEC validation
+    // DNSSEC validation
     dnssec-validation auto;
 
-    # Listen on all interfaces
+    // Listen on all interfaces
     listen-on { any; };
     listen-on-v6 { any; };
 
-    # CRITICAL: Enable dynamic zone management via API
+    // CRITICAL: Enable dynamic zone management via API
     allow-new-zones yes;
 };
 
-# Statistics channel for monitoring API
+// Statistics channel for API - MUST be outside options block
 statistics-channels {
     inet 127.0.0.1 port 8053 allow { 127.0.0.1; };
 };
 
-# RNDC control for zone management
+// RNDC control
 controls {
     inet 127.0.0.1 port 953 allow { 127.0.0.1; } keys { "rndc-key"; };
 };
 
-# Logging (recommended)
+// Logging
 logging {
     channel default_log {
         file "/var/log/bind/default.log" versions 3 size 5m;
@@ -153,8 +222,9 @@ logging {
     category queries { default_log; };
 };
 
-# Include zone configurations
+// Include zone configurations
 include "/etc/bind/named.conf.local";
+EOF
 ```
 
 ### Key Configuration Points
