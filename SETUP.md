@@ -283,6 +283,10 @@ rndc status  # Verify it's running
 
 ```bash
 cp env.example .env
+
+# Set secure permissions (contains sensitive API keys!)
+chmod 600 .env
+chown root:root .env
 ```
 
 ### 2. Edit Configuration
@@ -563,13 +567,13 @@ tail -f /var/log/syslog | grep named
 
 ## Quick Reference
 
-| File | Purpose |
-|------|---------|
-| `/opt/bind9-api/.env` | API configuration |
-| `/etc/bind/named.conf` | BIND9 main config |
-| `/etc/bind/rndc.key` | RNDC authentication |
-| `/etc/bind/keys/ddns-key.key` | TSIG key for updates |
-| `/var/lib/bind/` | Zone files directory |
+| File | Purpose | Owner | Permissions |
+|------|---------|-------|-------------|
+| `/opt/bind9-api/.env` | API configuration | `root:root` | `600` |
+| `/etc/bind/named.conf` | BIND9 main config | `root:bind` | `644` |
+| `/etc/bind/rndc.key` | RNDC authentication | `bind:bind` | `640` |
+| `/etc/bind/keys/ddns-key.key` | TSIG key for updates | `bind:bind` | `640` |
+| `/var/lib/bind/` | Zone files directory | `bind:bind` | `755` |
 
 | Command | Description |
 |---------|-------------|
