@@ -1,6 +1,6 @@
 # BIND9 REST API
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
 A comprehensive REST API for BIND9 DNS Server management with full support for zones, records, DNSSEC, and server control.
@@ -535,7 +535,7 @@ bind9-api/
 
 ## License
 
-MIT License - Copyright (c) 2024 Harutyun Dermenjyan
+Apache License 2.0 - Copyright (c) 2024-2026 Harutyun Dermenjyan
 
 See [LICENSE](LICENSE) for details.
 
