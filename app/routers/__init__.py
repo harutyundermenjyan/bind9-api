@@ -9,6 +9,7 @@ from .stats import router as stats_router
 from .dnssec import router as dnssec_router
 from .auth import router as auth_router
 from .health import router as health_router
+from .acls import router as acls_router
 
 __all__ = [
     "zones_router",
@@ -18,5 +19,6 @@ __all__ = [
     "dnssec_router",
     "auth_router",
     "health_router",
+    "acls_router",
 ]
 

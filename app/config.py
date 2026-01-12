@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     bind9_named_checkconf: str = "/usr/sbin/named-checkconf"
     bind9_dnssec_keygen: str = "/usr/sbin/dnssec-keygen"
     bind9_dnssec_signzone: str = "/usr/sbin/dnssec-signzone"
+    bind9_acl_file: str = "/etc/bind/named.conf.acls"
     
     # Statistics Channel
     bind9_stats_url: str = "http://127.0.0.1:8053"

@@ -24,6 +24,7 @@ from .routers import (
     dnssec_router,
     auth_router,
     health_router,
+    acls_router,
 )
 
 
@@ -101,6 +102,7 @@ app.include_router(records_router, prefix=settings.api_prefix)
 app.include_router(server_router, prefix=settings.api_prefix)
 app.include_router(stats_router, prefix=settings.api_prefix)
 app.include_router(dnssec_router, prefix=settings.api_prefix)
+app.include_router(acls_router)
 
 
 # Custom OpenAPI schema
