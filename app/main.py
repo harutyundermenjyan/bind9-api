@@ -55,6 +55,15 @@ async def lifespan(app: FastAPI):
         await init_db()
         logger.info("Database initialized")
     
+    # Initialize ACL file (ensures it exists for BIND9 include statement)
+    try:
+        from .services.acls import ACLService
+        acl_service = ACLService()
+        acl_service._ensure_file_exists()
+        logger.info(f"ACL file initialized: {settings.bind9_acl_file}")
+    except Exception as e:
+        logger.warning(f"Could not initialize ACL file: {e}")
+    
     yield
     
     # Shutdown

@@ -92,6 +92,12 @@ For comprehensive Terraform/OpenTofu configuration guides, see the **[Terraform 
 - ✅ LOC - Geographic location
 - ✅ And many more...
 
+### ACL Management (Access Control Lists)
+- ✅ Create, read, update, delete named ACLs
+- ✅ ACL file auto-created on API startup
+- ✅ Supports IP addresses, networks, TSIG keys
+- ✅ Automatic BIND9 reload on changes
+
 ### Server Control (All RNDC Commands)
 - ✅ Server status and version
 - ✅ Reload configuration

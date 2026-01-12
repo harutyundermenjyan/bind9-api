@@ -282,33 +282,33 @@ class ACLService:
     # =========================================================================
     
     async def ensure_included(self) -> bool:
-        """Ensure the ACL file is included in named.conf"""
+        """
+        Check if the ACL file is included in named.conf.
+        
+        Note: This method does NOT automatically modify named.conf.
+        The include statement must be added manually by the administrator.
+        This is a deliberate design choice for security and reliability.
+        """
         if not self.named_conf.exists():
             return False
         
-        include_line = f'include "{self.acl_file}";'
-        content = self.named_conf.read_text()
-        
-        if include_line in content or str(self.acl_file) in content:
-            return True  # Already included
-        
-        # Need to add include at the beginning
-        # Find the right place - after any initial comments
-        lines = content.split('\n')
-        insert_pos = 0
-        
-        for i, line in enumerate(lines):
-            stripped = line.strip()
-            if stripped and not stripped.startswith('//') and not stripped.startswith('/*'):
-                insert_pos = i
-                break
-        
-        lines.insert(insert_pos, f'\n// ACL definitions (managed by bind9-api)')
-        lines.insert(insert_pos + 1, include_line)
-        lines.insert(insert_pos + 2, '')
-        
-        self.named_conf.write_text('\n'.join(lines))
-        return True
+        try:
+            content = self.named_conf.read_text()
+            include_line = f'include "{self.acl_file}";'
+            
+            if include_line in content or str(self.acl_file) in content:
+                return True  # Already included
+            
+            # Log warning but don't fail - ACLs will be written to file
+            # but won't be active until admin adds include statement
+            import logging
+            logging.warning(
+                f"ACL file '{self.acl_file}' is not included in named.conf. "
+                f"ACLs will be saved but not active until you add: {include_line}"
+            )
+            return False
+        except Exception:
+            return False
     
     async def check_included(self) -> bool:
         """Check if ACL file is included in named.conf"""

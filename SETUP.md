@@ -104,19 +104,39 @@ chmod 640 /etc/bind/keys/ddns-key.key
 cat /etc/bind/keys/ddns-key.key
 ```
 
-### 4. Configure BIND9
+### 4. Setup ACL File (for `bind9_acl` Terraform Resource)
+
+The API can manage BIND9 ACLs (Access Control Lists) via the `bind9_acl` Terraform resource. ACLs are stored in a dedicated file.
+
+```bash
+# Allow the API to create/manage the ACL file
+chmod g+w /etc/bind
+
+# The API automatically creates the empty ACL file on startup
+# OR create it manually:
+touch /etc/bind/named.conf.acls
+chown bind:bind /etc/bind/named.conf.acls
+chmod 664 /etc/bind/named.conf.acls
+```
+
+The file will be managed by the API - **do not edit manually**.
+
+### 5. Configure BIND9
 
 On Debian/Ubuntu, BIND9 uses split config files by default. You have two options:
 
 #### Option A: Modify Default Files (Recommended for Debian/Ubuntu)
 
-**Step 1: Edit `/etc/bind/named.conf` to include keys:**
+**Step 1: Edit `/etc/bind/named.conf` to include keys and ACLs:**
 
 ```bash
 cat > /etc/bind/named.conf << 'EOF'
 // Include keys at the top
 include "/etc/bind/rndc.key";
 include "/etc/bind/keys/ddns-key.key";
+
+// Include API-managed ACLs (for bind9_acl Terraform resource)
+include "/etc/bind/named.conf.acls";
 
 // Default includes
 include "/etc/bind/named.conf.options";
@@ -182,6 +202,9 @@ cat > /etc/bind/named.conf << 'EOF'
 include "/etc/bind/rndc.key";
 include "/etc/bind/keys/ddns-key.key";
 
+// Include API-managed ACLs (for bind9_acl Terraform resource)
+include "/etc/bind/named.conf.acls";
+
 options {
     directory "/var/cache/bind";
 
@@ -233,6 +256,7 @@ EOF
 |---------|---------|----------|
 | `include "rndc.key"` | RNDC authentication for server control | ✅ Yes |
 | `include "ddns-key.key"` | TSIG key for authenticated DNS updates | ✅ Yes |
+| `include "named.conf.acls"` | API-managed ACLs (for `bind9_acl` resource) | ✅ Yes |
 | `allow-new-zones yes` | Allows API to create/delete zones dynamically | ✅ Yes |
 | `controls { ... }` | RNDC control channel (port 953) | ✅ Yes |
 | `statistics-channels` | Enables statistics API endpoint | Optional |
