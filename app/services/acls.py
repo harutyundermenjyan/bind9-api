@@ -223,6 +223,9 @@ class ACLService:
         new_content = self._regenerate_file(acls)
         self._write_file(new_content)
         
+        # Ensure ACL file is included in named.conf before reloading
+        await self.ensure_included()
+        
         # Reload BIND9 to pick up changes
         await self._reload_bind9()
         
