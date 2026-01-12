@@ -178,18 +178,32 @@ class ZoneFileService:
         serial = int(datetime.utcnow().strftime("%Y%m%d01"))
         
         # Normalize names - handle FQDN (with trailing dot) properly
-        original_soa_mname = soa_mname
+        # soa_mname handling:
+        # - "ns1" (simple) -> "ns1.zone_name."
+        # - "ns1.zone_name" (FQDN without dot) -> "ns1.zone_name."
+        # - "ns1.zone_name." (FQDN with dot) -> "ns1.zone_name."
+        # - "ns1.other.com" (external FQDN without dot) -> "ns1.other.com."
         if soa_mname.endswith("."):
-            # Already FQDN, keep as is
+            # Already FQDN with trailing dot, keep as is
             pass
+        elif "." in soa_mname:
+            # Contains dots - likely already a FQDN, just add trailing dot
+            soa_mname = f"{soa_mname}."
         else:
+            # Simple name like "ns1" - append zone name
             soa_mname = f"{soa_mname}.{zone_name}."
         
+        # soa_rname handling (same logic, but also handle @ -> . conversion)
+        soa_rname = soa_rname.replace('@', '.')
         if soa_rname.endswith("."):
-            # Already FQDN, keep as is
+            # Already FQDN with trailing dot, keep as is
             pass
+        elif "." in soa_rname:
+            # Contains dots - likely already a FQDN, just add trailing dot
+            soa_rname = f"{soa_rname}."
         else:
-            soa_rname = f"{soa_rname.replace('@', '.')}.{zone_name}."
+            # Simple name like "hostmaster" - append zone name
+            soa_rname = f"{soa_rname}.{zone_name}."
         
         # Build zone file content
         lines = [
