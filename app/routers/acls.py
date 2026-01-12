@@ -4,13 +4,14 @@ ACL Router - API endpoints for managing BIND9 Access Control Lists
 
 from typing import List
 from fastapi import APIRouter, HTTPException, Depends, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.acls import (
     ACLCreate, ACLUpdate, ACLResponse, ACLListResponse
 )
 from ..services.acls import ACLService, ACLError
 from ..auth import require_read, require_write, require_admin, AuthenticatedUser
-from ..database import log_audit
+from ..database import log_audit, get_db
 
 router = APIRouter(prefix="/api/v1/acls", tags=["ACLs"])
 
@@ -86,7 +87,8 @@ async def get_acl(
 async def create_acl(
     acl: ACLCreate,
     current_user: AuthenticatedUser = Depends(require_write),
-    acl_service: ACLService = Depends(get_acl_service)
+    acl_service: ACLService = Depends(get_acl_service),
+    db: AsyncSession = Depends(get_db)
 ):
     """Create a new ACL"""
     try:
@@ -101,6 +103,7 @@ async def create_acl(
         result = await acl_service.create_acl(acl)
         
         await log_audit(
+            db=db,
             user=current_user.identifier,
             action="CREATE",
             resource_type="acl",
@@ -132,7 +135,8 @@ async def update_acl(
     name: str,
     update: ACLUpdate,
     current_user: AuthenticatedUser = Depends(require_write),
-    acl_service: ACLService = Depends(get_acl_service)
+    acl_service: ACLService = Depends(get_acl_service),
+    db: AsyncSession = Depends(get_db)
 ):
     """Update an existing ACL"""
     try:
@@ -149,6 +153,7 @@ async def update_acl(
         result = await acl_service.update_acl(name, update)
         
         await log_audit(
+            db=db,
             user=current_user.identifier,
             action="UPDATE",
             resource_type="acl",
@@ -179,13 +184,15 @@ async def update_acl(
 async def delete_acl(
     name: str,
     current_user: AuthenticatedUser = Depends(require_admin),
-    acl_service: ACLService = Depends(get_acl_service)
+    acl_service: ACLService = Depends(get_acl_service),
+    db: AsyncSession = Depends(get_db)
 ):
     """Delete an ACL"""
     try:
         await acl_service.delete_acl(name)
         
         await log_audit(
+            db=db,
             user=current_user.identifier,
             action="DELETE",
             resource_type="acl",
