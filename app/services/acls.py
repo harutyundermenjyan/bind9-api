@@ -3,7 +3,10 @@ ACL Service - Manages BIND9 Access Control Lists
 Handles reading, writing, and managing the ACL configuration file
 """
 
+import os
 import re
+import pwd
+import grp
 import asyncio
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -29,8 +32,41 @@ class ACLService:
     # File Operations
     # =========================================================================
     
+    def _set_bind_ownership(self, path: Path) -> None:
+        """
+        Set file ownership to bind:bind and permissions to 664.
+        This ensures BIND9 can read the file after API creates/updates it.
+        """
+        try:
+            # Get bind user/group IDs
+            bind_uid = pwd.getpwnam('bind').pw_uid
+            bind_gid = grp.getgrnam('bind').gr_gid
+            
+            # Set ownership to bind:bind
+            os.chown(path, bind_uid, bind_gid)
+            
+            # Set permissions to 664 (rw-rw-r--)
+            os.chmod(path, 0o664)
+        except KeyError:
+            # 'bind' user doesn't exist - try 'named' (used on some distros)
+            try:
+                named_uid = pwd.getpwnam('named').pw_uid
+                named_gid = grp.getgrnam('named').gr_gid
+                os.chown(path, named_uid, named_gid)
+                os.chmod(path, 0o664)
+            except KeyError:
+                # Neither bind nor named user exists - leave as is
+                # Just set world-readable permissions
+                os.chmod(path, 0o644)
+        except PermissionError:
+            # Can't change ownership (not running as root) - just set permissions
+            try:
+                os.chmod(path, 0o664)
+            except PermissionError:
+                pass  # Can't even change permissions - file may still work
+    
     def _ensure_file_exists(self) -> None:
-        """Ensure the ACL file exists"""
+        """Ensure the ACL file exists with correct ownership and permissions"""
         if not self.acl_file.exists():
             self.acl_file.parent.mkdir(parents=True, exist_ok=True)
             header = f"""\
@@ -40,6 +76,8 @@ class ACLService:
 
 """
             self.acl_file.write_text(header)
+            # Set correct ownership and permissions for BIND9
+            self._set_bind_ownership(self.acl_file)
     
     def _read_file(self) -> str:
         """Read the ACL file content"""
@@ -47,9 +85,11 @@ class ACLService:
         return self.acl_file.read_text()
     
     def _write_file(self, content: str) -> None:
-        """Write content to the ACL file"""
+        """Write content to the ACL file with correct ownership"""
         self._ensure_file_exists()
         self.acl_file.write_text(content)
+        # Ensure ownership/permissions are correct after write
+        self._set_bind_ownership(self.acl_file)
     
     # =========================================================================
     # Parsing
