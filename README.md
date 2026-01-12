@@ -98,6 +98,15 @@ For comprehensive Terraform/OpenTofu configuration guides, see the **[Terraform 
 - ✅ Supports IP addresses, networks, TSIG keys
 - ✅ Automatic BIND9 reload on changes
 
+> **ACL File Location:** `/etc/bind/named.conf.acls`
+> 
+> The API manages ACLs in a dedicated file. This file is:
+> - **Auto-created on API startup** if it doesn't exist
+> - **Never deleted** - only emptied when all ACLs are removed
+> - **Preserved on API restart** - existing content is never overwritten
+> 
+> **Required Setup:** Add `include "/etc/bind/named.conf.acls";` to your `/etc/bind/named.conf`
+
 ### Server Control (All RNDC Commands)
 - ✅ Server status and version
 - ✅ Reload configuration
@@ -141,6 +150,9 @@ Before installing the API, your BIND9 server must be properly configured.
 # Include keys
 include "/etc/bind/rndc.key";
 include "/etc/bind/keys/ddns-key.key";
+
+# Include API-managed ACLs (for bind9_acl Terraform resource)
+include "/etc/bind/named.conf.acls";
 
 options {
     directory "/var/cache/bind";
@@ -218,6 +230,20 @@ mkdir -p /var/log/bind
 chown bind:bind /var/lib/bind /var/log/bind
 chmod 755 /var/lib/bind /var/log/bind
 ```
+
+### Setup ACL File (for `bind9_acl` Terraform Resource)
+
+```bash
+# Allow API to create/manage the ACL file
+chmod g+w /etc/bind
+
+# The API auto-creates this file on startup, OR create manually:
+touch /etc/bind/named.conf.acls
+chown bind:bind /etc/bind/named.conf.acls
+chmod 664 /etc/bind/named.conf.acls
+```
+
+> **Note:** The ACL file is managed by the API. It is auto-created on startup, never deleted (only emptied), and preserved on restart.
 
 ### Verify Configuration
 
