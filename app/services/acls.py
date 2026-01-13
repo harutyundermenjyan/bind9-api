@@ -323,7 +323,7 @@ class ACLService:
     # =========================================================================
     
     async def _reload_bind9(self) -> Tuple[bool, str]:
-        """Reload BIND9 configuration"""
+        """Reload BIND9 configuration and wait for it to take effect"""
         try:
             # First validate configuration
             check_proc = await asyncio.create_subprocess_exec(
@@ -349,6 +349,10 @@ class ACLService:
             if reload_proc.returncode != 0:
                 error_msg = stderr.decode().strip()
                 raise ACLError(f"Failed to reload BIND9: {error_msg}")
+            
+            # Wait for BIND9 to fully process the new configuration
+            # This ensures ACLs are available before zones try to use them
+            await asyncio.sleep(0.5)
             
             return True, "Configuration reloaded"
             
