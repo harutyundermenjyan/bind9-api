@@ -30,24 +30,40 @@ class ACLService:
         self.acl_file = Path(settings.bind9_acl_file)
         self.named_conf = Path(settings.bind9_config_path)
         self._lock_file = Path("/tmp/.bind9-api-acl.lock")
+        self._lock_fd = None
     
-    @contextmanager
-    def _file_lock(self):
+    def _acquire_lock(self):
         """
-        Cross-process file lock for ACL operations.
+        Acquire cross-process file lock for ACL operations.
         Uses fcntl.flock for proper multi-worker synchronization.
         """
         # Ensure lock file exists
         self._lock_file.touch(exist_ok=True)
+        self._lock_fd = open(self._lock_file, 'w')
+        fcntl.flock(self._lock_fd.fileno(), fcntl.LOCK_EX)
+    
+    def _release_lock(self):
+        """Release the file lock"""
+        if self._lock_fd:
+            fcntl.flock(self._lock_fd.fileno(), fcntl.LOCK_UN)
+            self._lock_fd.close()
+            self._lock_fd = None
+    
+    async def _with_file_lock(self, func):
+        """
+        Run a function with file lock, executing blocking lock in thread pool.
+        This prevents blocking the async event loop.
+        """
+        loop = asyncio.get_event_loop()
         
-        with open(self._lock_file, 'w') as lock_fd:
-            try:
-                # Acquire exclusive lock (blocks until available)
-                fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX)
-                yield
-            finally:
-                # Release lock
-                fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
+        # Acquire lock in thread pool to avoid blocking event loop
+        await loop.run_in_executor(None, self._acquire_lock)
+        try:
+            # Execute the async function
+            return await func()
+        finally:
+            # Release lock
+            self._release_lock()
     
     # =========================================================================
     # File Operations
@@ -226,8 +242,11 @@ class ACLService:
         return acls.get(name)
     
     async def create_acl(self, acl: ACLCreate) -> ACLResponse:
-        """Create a new ACL (process-safe with file locking)"""
-        with self._file_lock():
+        """Create a new ACL (process-safe with async file locking)"""
+        result = None
+        
+        async def _do_create():
+            nonlocal result
             content = self._read_file()
             acls = self._parse_acls(content)
             
@@ -251,11 +270,18 @@ class ACLService:
             # Reload BIND9 to pick up changes
             await self._reload_bind9()
             
-            return acls[acl.name]
+            result = acls[acl.name]
+            return result
+        
+        await self._with_file_lock(_do_create)
+        return result
     
     async def update_acl(self, name: str, update: ACLUpdate) -> ACLResponse:
-        """Update an existing ACL (process-safe with file locking)"""
-        with self._file_lock():
+        """Update an existing ACL (process-safe with async file locking)"""
+        result = None
+        
+        async def _do_update():
+            nonlocal result
             content = self._read_file()
             acls = self._parse_acls(content)
             
@@ -279,11 +305,15 @@ class ACLService:
             # Reload BIND9
             await self._reload_bind9()
             
-            return existing
+            result = existing
+            return result
+        
+        await self._with_file_lock(_do_update)
+        return result
     
     async def delete_acl(self, name: str) -> bool:
-        """Delete an ACL (process-safe with file locking)"""
-        with self._file_lock():
+        """Delete an ACL (process-safe with async file locking)"""
+        async def _do_delete():
             content = self._read_file()
             acls = self._parse_acls(content)
             
@@ -300,6 +330,8 @@ class ACLService:
             await self._reload_bind9()
             
             return True
+        
+        return await self._with_file_lock(_do_delete)
     
     # =========================================================================
     # Include Management
