@@ -8,9 +8,11 @@ import re
 import pwd
 import grp
 import asyncio
+import fcntl
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
+from contextlib import contextmanager
 
 from ..config import settings
 from ..models.acls import ACLCreate, ACLResponse, ACLUpdate
@@ -21,12 +23,17 @@ class ACLError(Exception):
     pass
 
 
+# Global lock for ACL file operations to prevent race conditions
+_acl_file_lock = asyncio.Lock()
+
+
 class ACLService:
     """Service for managing BIND9 ACLs"""
     
     def __init__(self):
         self.acl_file = Path(settings.bind9_acl_file)
         self.named_conf = Path(settings.bind9_config_path)
+        self._lock = _acl_file_lock  # Use global lock for all instances
     
     # =========================================================================
     # File Operations
@@ -205,77 +212,80 @@ class ACLService:
         return acls.get(name)
     
     async def create_acl(self, acl: ACLCreate) -> ACLResponse:
-        """Create a new ACL"""
-        content = self._read_file()
-        acls = self._parse_acls(content)
-        
-        if acl.name in acls:
-            raise ACLError(f"ACL '{acl.name}' already exists")
-        
-        # Add new ACL
-        acls[acl.name] = ACLResponse(
-            name=acl.name,
-            entries=acl.entries,
-            comment=acl.comment
-        )
-        
-        # Regenerate file
-        new_content = self._regenerate_file(acls)
-        self._write_file(new_content)
-        
-        # Ensure ACL file is included in named.conf before reloading
-        await self.ensure_included()
-        
-        # Reload BIND9 to pick up changes
-        await self._reload_bind9()
-        
-        return acls[acl.name]
+        """Create a new ACL (thread-safe with locking)"""
+        async with self._lock:
+            content = self._read_file()
+            acls = self._parse_acls(content)
+            
+            if acl.name in acls:
+                raise ACLError(f"ACL '{acl.name}' already exists")
+            
+            # Add new ACL
+            acls[acl.name] = ACLResponse(
+                name=acl.name,
+                entries=acl.entries,
+                comment=acl.comment
+            )
+            
+            # Regenerate file
+            new_content = self._regenerate_file(acls)
+            self._write_file(new_content)
+            
+            # Ensure ACL file is included in named.conf before reloading
+            await self.ensure_included()
+            
+            # Reload BIND9 to pick up changes
+            await self._reload_bind9()
+            
+            return acls[acl.name]
     
     async def update_acl(self, name: str, update: ACLUpdate) -> ACLResponse:
-        """Update an existing ACL"""
-        content = self._read_file()
-        acls = self._parse_acls(content)
-        
-        if name not in acls:
-            raise ACLError(f"ACL '{name}' not found")
-        
-        existing = acls[name]
-        
-        # Update fields
-        if update.entries is not None:
-            existing.entries = update.entries
-        if update.comment is not None:
-            existing.comment = update.comment
-        
-        acls[name] = existing
-        
-        # Regenerate file
-        new_content = self._regenerate_file(acls)
-        self._write_file(new_content)
-        
-        # Reload BIND9
-        await self._reload_bind9()
-        
-        return existing
+        """Update an existing ACL (thread-safe with locking)"""
+        async with self._lock:
+            content = self._read_file()
+            acls = self._parse_acls(content)
+            
+            if name not in acls:
+                raise ACLError(f"ACL '{name}' not found")
+            
+            existing = acls[name]
+            
+            # Update fields
+            if update.entries is not None:
+                existing.entries = update.entries
+            if update.comment is not None:
+                existing.comment = update.comment
+            
+            acls[name] = existing
+            
+            # Regenerate file
+            new_content = self._regenerate_file(acls)
+            self._write_file(new_content)
+            
+            # Reload BIND9
+            await self._reload_bind9()
+            
+            return existing
     
     async def delete_acl(self, name: str) -> bool:
-        """Delete an ACL"""
-        content = self._read_file()
-        acls = self._parse_acls(content)
-        
-        if name not in acls:
-            raise ACLError(f"ACL '{name}' not found")
-        
-        del acls[name]
-        
-        # Regenerate file
-        new_content = self._regenerate_file(acls)
-        self._write_file(new_content)
-        
-        # Reload BIND9
-        await self._reload_bind9()
-        
-        return True
+        """Delete an ACL (thread-safe with locking)"""
+        async with self._lock:
+            content = self._read_file()
+            acls = self._parse_acls(content)
+            
+            if name not in acls:
+                raise ACLError(f"ACL '{name}' not found")
+            
+            del acls[name]
+            
+            # Regenerate file
+            new_content = self._regenerate_file(acls)
+            self._write_file(new_content)
+            
+            # Reload BIND9
+            await self._reload_bind9()
+            
+            return True
     
     # =========================================================================
     # Include Management
