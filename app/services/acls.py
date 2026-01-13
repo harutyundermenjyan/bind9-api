@@ -23,17 +23,31 @@ class ACLError(Exception):
     pass
 
 
-# Global lock for ACL file operations to prevent race conditions
-_acl_file_lock = asyncio.Lock()
-
-
 class ACLService:
     """Service for managing BIND9 ACLs"""
     
     def __init__(self):
         self.acl_file = Path(settings.bind9_acl_file)
         self.named_conf = Path(settings.bind9_config_path)
-        self._lock = _acl_file_lock  # Use global lock for all instances
+        self._lock_file = Path("/tmp/.bind9-api-acl.lock")
+    
+    @contextmanager
+    def _file_lock(self):
+        """
+        Cross-process file lock for ACL operations.
+        Uses fcntl.flock for proper multi-worker synchronization.
+        """
+        # Ensure lock file exists
+        self._lock_file.touch(exist_ok=True)
+        
+        with open(self._lock_file, 'w') as lock_fd:
+            try:
+                # Acquire exclusive lock (blocks until available)
+                fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX)
+                yield
+            finally:
+                # Release lock
+                fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
     
     # =========================================================================
     # File Operations
@@ -212,8 +226,8 @@ class ACLService:
         return acls.get(name)
     
     async def create_acl(self, acl: ACLCreate) -> ACLResponse:
-        """Create a new ACL (thread-safe with locking)"""
-        async with self._lock:
+        """Create a new ACL (process-safe with file locking)"""
+        with self._file_lock():
             content = self._read_file()
             acls = self._parse_acls(content)
             
@@ -240,8 +254,8 @@ class ACLService:
             return acls[acl.name]
     
     async def update_acl(self, name: str, update: ACLUpdate) -> ACLResponse:
-        """Update an existing ACL (thread-safe with locking)"""
-        async with self._lock:
+        """Update an existing ACL (process-safe with file locking)"""
+        with self._file_lock():
             content = self._read_file()
             acls = self._parse_acls(content)
             
@@ -268,8 +282,8 @@ class ACLService:
             return existing
     
     async def delete_acl(self, name: str) -> bool:
-        """Delete an ACL (thread-safe with locking)"""
-        async with self._lock:
+        """Delete an ACL (process-safe with file locking)"""
+        with self._file_lock():
             content = self._read_file()
             acls = self._parse_acls(content)
             
