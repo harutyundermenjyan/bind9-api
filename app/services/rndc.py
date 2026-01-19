@@ -327,6 +327,7 @@ class RNDCService:
         zone_type: str,
         file: Optional[str] = None,
         masters: Optional[List[str]] = None,
+        allow_query: Optional[List[str]] = None,
         allow_update: Optional[List[str]] = None,
         allow_transfer: Optional[List[str]] = None,
         view: Optional[str] = None
@@ -334,7 +335,7 @@ class RNDCService:
         """
         Add a new zone dynamically using rndc addzone.
         
-        Syntax: rndc addzone zone_name '{ type master; file "path"; allow-update { ... }; };'
+        Syntax: rndc addzone zone_name '{ type master; file "path"; allow-query { ... }; allow-update { ... }; };'
         """
         # Build zone configuration block (without the zone name)
         config_parts = ["{ "]
@@ -346,6 +347,11 @@ class RNDCService:
         if masters:
             masters_str = "; ".join(masters)
             config_parts.append(f' masters {{ {masters_str}; }};')
+        
+        if allow_query:
+            # Format: allow-query { any; }; or allow-query { internal; };
+            query_list = "; ".join(allow_query)
+            config_parts.append(f' allow-query {{ {query_list}; }};')
         
         if allow_update:
             # Format: allow-update { key "ddns-key"; };

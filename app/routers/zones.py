@@ -218,6 +218,11 @@ async def create_zone(
         if zone.zone_type in [ZoneType.SLAVE, ZoneType.SECONDARY]:
             masters = [f"{s.address}" for s in zone.options.masters]
         
+        # Get allow-query settings
+        allow_query = None
+        if zone.options and zone.options.allow_query:
+            allow_query = zone.options.allow_query
+        
         # Get allow-update settings
         allow_update = None
         if zone.options and zone.options.allow_update:
@@ -233,6 +238,7 @@ async def create_zone(
             zone_type=zone.zone_type.value,
             file=zone_file,
             masters=masters,
+            allow_query=allow_query,
             allow_update=allow_update,
             allow_transfer=allow_transfer,
         )
