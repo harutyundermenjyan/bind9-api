@@ -327,7 +327,6 @@ class RNDCService:
         zone_type: str,
         file: Optional[str] = None,
         masters: Optional[List[str]] = None,
-        allow_query: Optional[List[str]] = None,
         allow_update: Optional[List[str]] = None,
         allow_transfer: Optional[List[str]] = None,
         view: Optional[str] = None
@@ -335,7 +334,7 @@ class RNDCService:
         """
         Add a new zone dynamically using rndc addzone.
         
-        Syntax: rndc addzone zone_name '{ type master; file "path"; allow-query { ... }; allow-update { ... }; };'
+        Syntax: rndc addzone zone_name '{ type master; file "path"; allow-update { ... }; };'
         """
         # Build zone configuration block (without the zone name)
         config_parts = ["{ "]
@@ -347,11 +346,6 @@ class RNDCService:
         if masters:
             masters_str = "; ".join(masters)
             config_parts.append(f' masters {{ {masters_str}; }};')
-        
-        if allow_query:
-            # Format: allow-query { any; }; or allow-query { internal; };
-            query_list = "; ".join(allow_query)
-            config_parts.append(f' allow-query {{ {query_list}; }};')
         
         if allow_update:
             # Format: allow-update { key "ddns-key"; };
@@ -612,6 +606,181 @@ class RNDCService:
     async def halt(self) -> ServerCommandResult:
         """Halt the server immediately"""
         return await self.execute(ServerCommand(command=RNDCCommand.HALT))
+    
+    # =========================================================================
+    # Maintenance Commands
+    # =========================================================================
+    
+    async def cleanup_nzd(
+        self, 
+        cache_dir: str = "/var/cache/bind",
+        zones_dir: str = "/var/lib/bind",
+        clean_journals: bool = True
+    ) -> ServerCommandResult:
+        """
+        Clean up NZD (New Zone Database) and journal files to fix corrupted state.
+        
+        This stops named, removes NZD/NZF/JNL files, and restarts named.
+        Use when zones fail with 'out of range' or 'already exists' errors.
+        
+        Args:
+            cache_dir: BIND9 cache directory (default: /var/cache/bind)
+            zones_dir: BIND9 zones directory (default: /var/lib/bind)
+            clean_journals: Also clean .jnl journal files (default: True)
+        """
+        import subprocess
+        
+        start_time = datetime.utcnow()
+        errors = []
+        removed_files = []
+        
+        try:
+            # Step 1: Stop named service
+            stop_result = subprocess.run(
+                ["sudo", "systemctl", "stop", "named"],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            if stop_result.returncode != 0:
+                errors.append(f"Failed to stop named: {stop_result.stderr}")
+            
+            # Step 2: Remove NZD/NZF files from cache directory
+            cache_path = Path(cache_dir)
+            if cache_path.exists():
+                for pattern in ["*.nzd", "*.nzf", "*.nzd-lock", "*.nzf-lock"]:
+                    for f in cache_path.glob(pattern):
+                        try:
+                            f.unlink()
+                            removed_files.append(str(f))
+                        except Exception as e:
+                            errors.append(f"Failed to remove {f}: {e}")
+            
+            # Step 3: Remove journal files if requested
+            if clean_journals:
+                for dir_path in [Path(cache_dir), Path(zones_dir)]:
+                    if dir_path.exists():
+                        for f in dir_path.glob("*.jnl"):
+                            try:
+                                f.unlink()
+                                removed_files.append(str(f))
+                            except Exception as e:
+                                errors.append(f"Failed to remove {f}: {e}")
+            
+            # Step 4: Start named service
+            start_result = subprocess.run(
+                ["sudo", "systemctl", "start", "named"],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            if start_result.returncode != 0:
+                errors.append(f"Failed to start named: {start_result.stderr}")
+            
+            duration = (datetime.utcnow() - start_time).total_seconds() * 1000
+            
+            if errors:
+                return ServerCommandResult(
+                    command="cleanup_nzd",
+                    success=False,
+                    error="; ".join(errors),
+                    output=f"Partially cleaned {len(removed_files)} files" if removed_files else None,
+                    duration_ms=duration
+                )
+            
+            return ServerCommandResult(
+                command="cleanup_nzd",
+                success=True,
+                output=f"Cleaned up {len(removed_files)} files: {', '.join(removed_files) if removed_files else 'none found'}",
+                duration_ms=duration
+            )
+            
+        except subprocess.TimeoutExpired:
+            duration = (datetime.utcnow() - start_time).total_seconds() * 1000
+            return ServerCommandResult(
+                command="cleanup_nzd",
+                success=False,
+                error="Command timed out",
+                duration_ms=duration
+            )
+        except Exception as e:
+            duration = (datetime.utcnow() - start_time).total_seconds() * 1000
+            return ServerCommandResult(
+                command="cleanup_nzd",
+                success=False,
+                error=str(e),
+                duration_ms=duration
+            )
+    
+    async def cleanup_zone_files(self, zone_name: str, zones_dir: str = "/var/lib/bind", include_zone_file: bool = False) -> ServerCommandResult:
+        """
+        Clean up orphaned journal files for a specific zone.
+        
+        Use this before creating a zone if previous attempts left orphaned journal files
+        causing 'out of range' errors.
+        
+        Args:
+            zone_name: The zone name
+            zones_dir: Directory containing zone files
+            include_zone_file: If True, also delete the zone file itself (use with caution!)
+        """
+        start_time = datetime.utcnow()
+        removed_files = []
+        errors = []
+        
+        try:
+            zones_path = Path(zones_dir)
+            if zones_path.exists():
+                # Only clean up journal files by default - NOT the zone file itself
+                # Zone files should only be deleted when explicitly requested
+                patterns = [
+                    f"db.{zone_name}.jnl",
+                    f"{zone_name}.db.jnl",
+                    f"{zone_name}.jnl",
+                ]
+                
+                # Only include zone files if explicitly requested
+                if include_zone_file:
+                    patterns.extend([
+                        f"db.{zone_name}",
+                        f"{zone_name}.db",
+                    ])
+                
+                for pattern in patterns:
+                    file_path = zones_path / pattern
+                    if file_path.exists():
+                        try:
+                            file_path.unlink()
+                            removed_files.append(str(file_path))
+                        except Exception as e:
+                            errors.append(f"Failed to remove {file_path}: {e}")
+            
+            duration = (datetime.utcnow() - start_time).total_seconds() * 1000
+            
+            if errors:
+                return ServerCommandResult(
+                    command="cleanup_zone_files",
+                    success=False,
+                    error="; ".join(errors),
+                    output=f"Partially cleaned: {', '.join(removed_files)}" if removed_files else None,
+                    duration_ms=duration
+                )
+            
+            return ServerCommandResult(
+                command="cleanup_zone_files",
+                success=True,
+                output=f"Cleaned {len(removed_files)} files: {', '.join(removed_files)}" if removed_files else "No orphaned files found",
+                duration_ms=duration
+            )
+            
+        except Exception as e:
+            duration = (datetime.utcnow() - start_time).total_seconds() * 1000
+            return ServerCommandResult(
+                command="cleanup_zone_files",
+                success=False,
+                error=str(e),
+                duration_ms=duration
+            )
     
     # =========================================================================
     # Utility Methods

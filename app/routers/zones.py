@@ -213,15 +213,14 @@ async def create_zone(
                     detail=f"Zone file validation failed: {validation_msg}"
                 )
         
+        # Clean up any orphaned zone files before creating
+        # This prevents "out of range" errors from stale journal files
+        cleanup_result = await rndc_service.cleanup_zone_files(zone.name)
+        
         # Add zone via rndc
         masters = None
         if zone.zone_type in [ZoneType.SLAVE, ZoneType.SECONDARY]:
             masters = [f"{s.address}" for s in zone.options.masters]
-        
-        # Get allow-query settings
-        allow_query = None
-        if zone.options and zone.options.allow_query:
-            allow_query = zone.options.allow_query
         
         # Get allow-update settings
         allow_update = None
@@ -238,7 +237,6 @@ async def create_zone(
             zone_type=zone.zone_type.value,
             file=zone_file,
             masters=masters,
-            allow_query=allow_query,
             allow_update=allow_update,
             allow_transfer=allow_transfer,
         )
@@ -343,29 +341,63 @@ async def delete_zone(
     zonefile_service: ZoneFileService = Depends(get_zonefile_service),
 ):
     """Delete a DNS zone"""
+    from pathlib import Path as FilePath
+    
     try:
         # Get zone file before deletion
         zone_file = None
-        if delete_file:
+        try:
             zone_file = await zonefile_service.get_zone_file_path(zone_name)
+        except:
+            pass
         
         # Delete zone via rndc
         result = await rndc_service.delzone(zone_name)
         
-        if not result.success:
+        # Even if rndc fails, try to clean up files if requested
+        # This handles orphaned zones that exist in files but not in named
+        cleanup_messages = []
+        
+        if delete_file:
+            # Try to find and delete zone file and related files
+            zone_dirs = ["/var/lib/bind", "/var/cache/bind"]
+            zone_file_patterns = [
+                f"db.{zone_name}",
+                f"{zone_name}.db",
+                f"db.{zone_name}.jnl",
+                f"{zone_name}.db.jnl",
+                f"{zone_name}.jnl",
+            ]
+            
+            for zone_dir in zone_dirs:
+                dir_path = FilePath(zone_dir)
+                if dir_path.exists():
+                    for pattern in zone_file_patterns:
+                        file_path = dir_path / pattern
+                        if file_path.exists():
+                            try:
+                                file_path.unlink()
+                                cleanup_messages.append(f"Deleted {file_path}")
+                            except Exception as e:
+                                cleanup_messages.append(f"Failed to delete {file_path}: {e}")
+            
+            # Also delete by exact path if we found it
+            if zone_file:
+                zone_path = FilePath(zone_file)
+                if zone_path.exists():
+                    zone_path.unlink(missing_ok=True)
+                    cleanup_messages.append(f"Deleted {zone_file}")
+                # Delete journal file
+                journal_path = FilePath(str(zone_file) + ".jnl")
+                if journal_path.exists():
+                    journal_path.unlink(missing_ok=True)
+                    cleanup_messages.append(f"Deleted {journal_path}")
+        
+        if not result.success and not cleanup_messages:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to delete zone: {result.error}"
             )
-        
-        # Delete zone file and journal if requested
-        if delete_file and zone_file:
-            from pathlib import Path
-            zone_path = Path(zone_file)
-            zone_path.unlink(missing_ok=True)
-            # Also delete the journal file (.jnl) used for dynamic updates
-            journal_path = Path(str(zone_file) + ".jnl")
-            journal_path.unlink(missing_ok=True)
         
         # Log audit
         await log_audit(
@@ -376,12 +408,18 @@ async def delete_zone(
             resource_id=zone_name,
         )
         
+        message = f"Zone {zone_name} deleted successfully"
+        if cleanup_messages:
+            message += f". Cleanup: {'; '.join(cleanup_messages)}"
+        
         return OperationResult(
             success=True,
             operation="delete_zone",
-            message=f"Zone {zone_name} deleted successfully",
+            message=message,
         )
         
+    except HTTPException:
+        raise
     except RNDCError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

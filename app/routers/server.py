@@ -463,6 +463,103 @@ async def execute_command(
 
 
 # =============================================================================
+# Maintenance Operations
+# =============================================================================
+
+@router.post(
+    "/cleanup-nzd",
+    response_model=OperationResult,
+    summary="Clean up NZD database",
+    description="Clean up NZD (New Zone Database) and journal files to fix corrupted state. "
+                "Use when zones fail with 'out of range' or 'already exists' errors."
+)
+async def cleanup_nzd(
+    confirm: bool = Query(False, description="Confirm cleanup operation"),
+    clean_journals: bool = Query(True, description="Also clean .jnl journal files"),
+    current_user: AuthenticatedUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+    rndc_service: RNDCService = Depends(get_rndc_service),
+):
+    """
+    Clean up NZD and journal files to fix corrupted zone database.
+    
+    This operation:
+    1. Stops the named service
+    2. Removes NZD/NZF files from /var/cache/bind
+    3. Optionally removes .jnl journal files from /var/lib/bind
+    4. Restarts the named service
+    
+    Use this when you encounter errors like:
+    - "out of range" during zone creation (usually caused by corrupted journal files)
+    - "already exists" for zones that were deleted
+    """
+    if not confirm:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="NZD cleanup requires confirmation. Set confirm=true to proceed. "
+                   "This will briefly stop the DNS service."
+        )
+    
+    result = await rndc_service.cleanup_nzd(clean_journals=clean_journals)
+    
+    await log_audit(
+        db=db,
+        user=current_user.identifier,
+        action="CLEANUP_NZD",
+        resource_type="server",
+        status="success" if result.success else "failed",
+        details=result.output if result.success else result.error,
+    )
+    
+    return OperationResult(
+        success=result.success,
+        operation="cleanup_nzd",
+        message=result.output if result.success else result.error,
+        output=result.output,
+        duration_ms=result.duration_ms,
+    )
+
+
+@router.post(
+    "/cleanup-zone/{zone_name}",
+    response_model=OperationResult,
+    summary="Clean up orphaned zone files",
+    description="Clean up orphaned zone files for a specific zone before creation."
+)
+async def cleanup_zone_files(
+    zone_name: str,
+    current_user: AuthenticatedUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+    rndc_service: RNDCService = Depends(get_rndc_service),
+):
+    """
+    Clean up orphaned zone files for a specific zone.
+    
+    Use this before creating a zone if previous attempts left orphaned files
+    causing 'out of range' or 'file exists' errors.
+    """
+    result = await rndc_service.cleanup_zone_files(zone_name)
+    
+    await log_audit(
+        db=db,
+        user=current_user.identifier,
+        action="CLEANUP_ZONE_FILES",
+        resource_type="zone",
+        resource_id=zone_name,
+        status="success" if result.success else "failed",
+        details=result.output if result.success else result.error,
+    )
+    
+    return OperationResult(
+        success=result.success,
+        operation="cleanup_zone_files",
+        message=result.output if result.success else result.error,
+        output=result.output,
+        duration_ms=result.duration_ms,
+    )
+
+
+# =============================================================================
 # Server Shutdown (Dangerous!)
 # =============================================================================
 
