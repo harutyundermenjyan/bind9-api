@@ -5,6 +5,8 @@
 
 A comprehensive REST API for BIND9 DNS Server management with full support for zones, records, DNSSEC, and server control.
 
+📖 **Blog Post:** [Automating BIND9 DNS Management: From Manual Configs to Infrastructure as Code](https://medium.com/dev-genius/automating-bind9-dns-management-from-manual-configs-to-infrastructure-as-code-84292214b5a5)
+
 ---
 
 ## 🚀 Use with Terraform/OpenTofu
